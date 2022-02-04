@@ -1,0 +1,444 @@
+---
+title: "Assignment 1"
+author: "Luna Li"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# An Introduction to the exposome: environment-wide association in body mass index and fasting glucose
+
+Please check Canvas for the due date of this assignment.
+
+**Start early.** This is a challenging assignment! Each student must hand in their code and answers separately. This assignment is 25% of your grade. We cannot accept late assignments.
+
+Submit your answers as a knitted .html file: select the Knit drop down at the top of the window. Once converted to .html, select the file in the file browser, click the More drop down, and select Export. 
+
+
+```{r package loading}
+library(tidyverse)
+```
+## Background: 
+Body mass index and glucose are phenotypic traits that are known to be risk factors for Type 2 Diabetes (T2D). Genetic factors are associated with body mass index and glucose. However, environmental exposure factors associated to fasting glucose and/or body mass index may also play a role in T2D, given the rapid rise of both body mass index and diabetes in the last 20 years (https://www.cdc.gov/diabetes/statistics/slides/long_term_trends.pdf). 
+
+For example, it is hypothesized that poor diets or sugar consumption may influence body mass index or fasting glucose. However, these factors do not predict the phenotypes of body mass index or fasting glucose completely. In this assignment you will complement these associations in T2D, linking new potential environmental exposures in T2D clinical phenotypes. Specifically, we will execute a data-driven search for environmental exposures correlated with body mass index and fasting glucose, called ‘environment-wide association studies’ or ‘exposome-wide association studies’ (EWASs), similar to how investigators correlate individual SNPs with disease in GWAS.
+
+### Description of Data and Readings:
+Please skim [Patel et al 2010](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2873978/).
+
+```{r loading NHANES}
+load('./assignment1_2022.Rdata')
+```
+
+This .Rdata file contains 5 data.frames and an array named the following:
+
+* ExposureDescription:the dictionary of exposure variables in the training and testing datasets
+* ExposureList: a list of biomarkers of environmental exposures to test against BMI and glucose.
+* NHData.train: the training dataset from the NHANES 1999-2000 and 2001-2002 surveys
+* NHData.test: the testing dataset from the NHANES 2003-2004 and 2005-2006 surveys
+* demographicVariables: a dictionary of demographic variables in the training and testing datasets.
+
+These data were derived from the National Health and Nutrition Examination Survey (NHANES), a survey on a representative sample of the United States population, undertaken by the US Centers for Disease Control and Prevention (see here: [https://www.cdc.gov/nchs/nhanes/](https://www.cdc.gov/nchs/nhanes/). Specifically, we downloaded the data from the NHANES web site and stitched them together to create the data.frame objects above. For more information, please see our paper, [Patel CJ, et al 2016, Nature Scientific Data](http://www.nature.com/articles/sdata201696). 
+
+# A short tutorial on analysis of survey data
+
+The NHANES participants are representative of the United States population. A challenge in making a dataset representative is ensuring all types of individuals are sampled that reflect the diversity of the US at the lowest possible cost. Simply calling a finite number of people up randomly is not going to achieve representativeness. The US CDC and National Centers for Health Statistics (NCHS) are able to achieve representativeness by sampling specific facets of the population at higher probabilities than would be observed if one was to randomly sample the population. Second, NCHS samples people from specific parts of the population (e.g., 15 counties a year) to save time and money (it is easier to survey people in a neighborhood than randomly all over the US). 
+
+In fact, most data that you will find from the US CDC or international epidemiological surveys, use a special sampling technique called “survey sampling”. You can learn more about the CDC and the NCHS sampling procedure here:
+[https://wwwn.cdc.gov/Nchs/Nhanes/AnalyticGuidelines.aspx](https://wwwn.cdc.gov/Nchs/Nhanes/AnalyticGuidelines.aspx)
+
+What does this mean for us? We cannot use the common tools in R to do modeling if we desire to produce “valid” effect sizes, associations/correlations, and pvalues. Why? Because individuals are not sampled randomly, they exhibit some inherent correlation with others (e.g., individuals sampled from the same town, for example). Therefore, this will influence the standard errors and averages of the correlations and therefore also influence the inference (pvalues for correlation).
+
+How do we address this? We simply use a package, aptly called ‘survey’, to take into account the unequal survey-weighted design of the NHANES population. The two main functions you will use in this assignment to achieve this includes ‘svydesign’ and ‘svyglm’ (survey-weighted general linear modeling, which can do linear, logistic, and other types of regressions). Here is how you use them using the NHdata.train data.frame.
+
+First, we need to load the ‘survey’ package:
+```{r}
+library(survey)
+```
+
+Next, we need to tell R that we have a survey-weighted data we need to analyze. This is done through the 'svydesign' function from the survey library, for example for the training data, NHData.train:
+
+```{r creating a design object}
+dsn <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.train)
+```
+
+This tells R that we have a survey-weighted sample (denoted by weights in the function above). The weights signify how much an individual should be considered in the model and is a function of their prevalence in the population. For example, individuals with higher weights are less prevalent in the population.  In contrast, in a simple random sample, the weights would be equal for every individual. Second, the ids and strata parameters tell R where an individual was sampled. ‘Strata’ are units (such as zipcodes) that are sampled within ‘primary sampling units’ (or PSUs, SDMVPSU) such as a county. Individuals within strata are more correlated with one another than individuals that live in different strata. Therefore, these similarities within sampling strata must be taken into account when estimating correlations.
+
+We can run regression models using the 'svyglm' function. For example, suppose I wanted to regress Body Mass Index (coded as BMXBMI in the data.frame) on age (coded as RIDAGEYR), we can use the 'svyglm' function (INSTEAD of the regular ol’ 'lm' function):
+
+```{r BMI and age}
+mod <-svyglm(BMXBMI ~ RIDAGEYR, dsn)
+summary(mod)
+```
+
+Observe that the estimates (and pvalues) will be different when using the 'lm' function (give it a shot):
+
+```{r no weighting}
+mod2 <- lm(BMXBMI ~ RIDAGEYR, data=NHData.train)
+summary(mod2)
+```
+
+In this assignment, we will use the survey package and 'svydesign' and 'svyglm' functions to run your association tests. These are good functions to know when analyzing data from the public domain.
+
+Answer the questions that are numbered in the space below that says "your answer here". Supply R code when required by using the back ticks. For example:
+
+## Sample Questions (and Answers):
+1. What is the meaning of life?
+
+The meaning of life is 42.
+
+2. What is e to the power of 3?
+
+```{r}
+exp(3)
+```
+
+
+
+# A. Background Questions
+
+1. How are the phenotypes (glucose and BMI) measured in participants of the NHANES? (1)
+- As described in the [NHANES survey protocol](https://www.cdc.gov/nchs/data/series/sr_01/sr01_056.pdf), they selected individuals for home interviews and carried out physical examinations in mobile examination centers for phenotype measurements. 
+
+2. What does representative mean with respect to NHANES? Why is it a different than say, the Framingham Heart Study?  (2)
+- NHANES is an annually administered, cross-sectional survey that employs a complex, multistage and stratified probability sampling design and calculates complex weighting schemes in order to ensure representativeness of the resident, noninstitutionalized U.S. population.   On the contrary, the Framingham Heart Study is a longitudinal cohort study carried out on a single community population, which may not be as generalizable as NHANES.
+
+3. These phenotypes (glucose and BMI) are related to type 2 diabetes. (a) Draw the E, G, P, and D diagram and annotate what you are investigating in your anticipated NHANES EWASs. (b)  What does body mass index measure? What does fasting glucose measures? Why are they important in type 2 diabetes? (2)
+
+- your answers here (in free text, some hints below)
+
+a:
+
+- Phenotype(s): body mass index, glucose
+- Exposure(s): Environmental exposures measured by NHANES, for example, lead, mercury, arsenic, pesticide metabolites, air pollution indicators, and plasticizing agents, etc. (As described in `ExposureDescription`)
+- Disease(s): Type 2 diabetes  
+We are investigating environmental exposure factors that associated to fasting glucose and/or body mass index which may also play a role in T2D.
+
+b:
+
+- BMI can be calculated by dividing weight in pounds by height in inches squared, and then multiply that number by 703. It measures and is also a marker that can be used to determine the risk for type 2 diabetes complications, more and more studies suggest that a higher BMI raises the risk of having T2D.  
+- Fasting glucose is measured by a blood glucose test that screens for diabetes by measuring the level of glucose (sugar) in a person’s blood. Normal blood glucose level range within 70 to 99 mg/dL (3.9 to 5.5 mmol/L). Higher ranges could indicate pre-diabetes or diabetes.
+
+
+
+4. How are the environmental exposures measured in the NHANES? Choose a few examples (up to 5) of  different types of biomarkers of environmental exposures from the ExposureList array and query the NHANES website for the assay description of the biomarker. (2)
+- The CDC samples urine, blood, and other human tissue to measure environmental exposure indicators of the exposome using gold standard mass spectrometry and immunological assays.
+- LBXBCD: Blood cadmium reflects both recent and cumulative exposures. Cadmium is absorbed via inhalation and ingestion. Occupational exposure is the most common cause of elevated cadmium levels. Inhalation of cigarette smoke is a predominant source of exposure in smokers whose blood cadmium levels have been observed to be about twice as high compared to nonsmokers. For nonsmokers who are not exposed to cadmium in the workplace, ingestion through food is the largest source of exposure. With chronic exposure, cadmium accumulates in the liver and kidneys where it is bound to metallothionein, an inducible metal binding protein. The kidney is a critical target and shows the earliest sign of cadmium toxicity. Cadmium can produce lung, pituitary gland and kidney tumors in animals and has been associated with lung cancer in humans in occupational epidemiologic studies. Both International Agency for Research on Cancer (IARC) and National Toxicology Program (NTP) consider cadmium a human carcinogen.  
+- LBXBPB: Lead is a known environmental toxin that has been shown to affect deleteriously the nervous, hematopoietic, endocrine, renal, and reproductive systems. In young children, lead exposure is a particular hazard because children more readily absorb lead than adults, and children’s developing nervous systems also make them more susceptible to the effects of lead. The primary sources of exposure for children are lead-laden paint chips and dust as a result of deteriorating lead-based paint. The risk for lead exposure is disproportionately higher for children who are poor, non-Hispanic black, living in large metropolitan areas, or living in older housing. Among adults, the most common high exposure sources are occupational. Blood lead levels measured in previous NHANES cycles have been the cornerstone of lead exposure surveillance in the U.S. The data have been used to document the burden and dramatic decline of elevated blood lead levels, to promote the reduction of lead use, and to help to redefine national lead poisoning prevention guidelines, standards, and abatement activities.  
+- LBXTHG: Total mercury. Uncertainties exist regarding levels of exposure to methyl mercury from fish consumption and potential health effects resulting from this exposure. Past estimates of exposure to methyl mercury have been obtained from results of food consumption surveys and measures of methyl mercury in fish. Measures of a biomarker of exposure are needed for improved exposure assessments. Blood mercury levels will be assessed in two subpopulations particularly vulnerable to the health effects from mercury exposure: children 1-5 years old and women of childbearing age. Blood measures of total and inorganic mercury will be important for evaluation of exposure from exposure to mercury in interior latex paints.  
+
+
+    
+### Let’s explore the phenotypes, body mass index (BMXBMI) and fasting glucose (LBXGLU) with respect to demographic characteristics of your population in the training dataset (NHData.train)
+
+
+5. How many individuals are there with BMI values? Draw a histogram of BMI and describe the mean and median. Is the distribution "skewed" or biased toward a certain direction on the x axis? (1)
+- your answer here (with R code). Remember, use the NHData.train cohort.
+
+```{r Q5}
+# number of individuals with BMI values
+print(paste("There are",sum(!is.na(NHData.train$BMXBMI)),"individuals with BMI values in the training set."))
+
+# histogram of BMI
+hist(NHData.train$BMXBMI)
+
+# describe the mean and median
+summary(NHData.train$BMXBMI)
+```
+The distribution is right-skewed with its mean (24.80) greater than its median (24.10).
+
+
+6. Plot BMI vs age. (1)
+
+```{r Q6}
+plot(NHData.train$RIDAGEYR,NHData.train$BMXBMI,xlab = "age", ylab = "BMI")
+```
+
+
+
+7. Plot a boxplot of BMI versus sex. (1)
+- your answer here
+
+```{r Q7}
+NHData.train$sex <- apply(NHData.train[,c("female", "male")], 1, function(x) names(which(x == 1)))
+boxplot(NHData.train$BMXBMI ~ NHData.train$sex, xlab = "sex", ylab = "BMI")
+```
+
+
+
+8. Plot a boxplot of BMI versus race/ethnicity. (2)
+- your answer here
+
+
+```{r Q8}
+NHData.train$race <- apply(NHData.train[,c("white", "black", "mexican", "other_hispanic", "other_eth")], 1, function(x) names(which(x == 1)))
+boxplot(NHData.train$BMXBMI ~ NHData.train$race, xlab = "race/ethnicity", ylab = "BMI")
+```
+
+
+
+9. Plot BMI versus an indicator of socioecononomic status, the income to poverty ratio (INDFMPIR). The income-to-poverty ratio is a the household income divided by the household poverty level for a given survey year. Therefore a Income-to-poverty ratio of 1 means the individual has household income equal to the poverty level. (1)
+- your answer here
+
+```{r Q9}
+plot(NHData.train$INDFMPIR, NHData.train$BMXBMI, xlab = "income to poverty ratio", ylab = "BMI")
+```
+
+
+10. Describe the differences in groups (e.g., what is the difference of BMI averages in males vs. females): summarizing the plots from 6-9. (1)
+- On average, people that are older, female, black, lower income-to-poverty ratio tend to have a larger BMI compared to others.
+
+
+
+11. What statistical model would you use to test the association (and significance) of your findings in 10? Execute the model using svyglm below, using ***multivariate regression***, modeling BMI as a function of age, ethnicity, sex, and INDFMPIR. (3)
+- We could use a regression model to test the association between those variables and BMI, and look at the coefficients and p-values of each variables to verify our assumptions.
+
+
+
+```{r Q11}
+# set 'white' as reference level
+NHData.train$race <- relevel(factor(NHData.train$race), ref = "white")
+# create a design object
+dsn <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.train)
+# run the regression model
+model <-svyglm(BMXBMI ~ RIDAGEYR + race + sex + INDFMPIR, dsn)
+summary(model)
+```
+
+
+### Using the model you described in 11, report the following:
+
+12. Change in BMI for a 1 year increase/change in age and significance of this association. (1)
+- For a 1 year increase in age, the BMI would increase 0.152421 unit. The significance (p-value) of this association is less than 2e-16, meaning that the probability of obtaining results at least as extreme as the observed results given there is no association between age and BMI is extremely small, we could therefore reject the null hypothesis
+and conclude there is an association between these two variables.
+
+13. Difference of BMI in males versus females and significance. (1)
+- Given other condition the same (age, race and INDFMPIR), a male would have a 0.209020 unit smaller BMI than female. The significance (p-value) of this association is 0.13017 and we could not reject the null hypothesis, meaning that is no association found between sex and BMI in this study.
+
+14. Difference of BMI in Non-Hispanic Black versus Whites, Mexican American versus Whites, and Other Hispanic vs. White, and Other versus White. (1)
+- Given other condition the same (age, sex and INDFMPIR), compared to white people, Black, Mexican and Other Hispanic people would have a 1.560491, 0.992781 and 0.553229 unit larger BMI repectively, and people of other race would have a 0.012941 unit smaller BMI. The p-values of them are 1.66e-08, 3.10e-05, 0.062 and 0.983 repectively, meaning that only the results of Black vs White and Mexican vs White are significant.
+
+
+
+15. Repeat Q11 for fasting glucose (LBXGLU), developing a multivariate linear regression model to associate fasting glucose with age, sex, race, and income-poverty ratio. (3)
+- 
+
+```{r Q15}
+model_fg <- svyglm(LBXGLU ~ RIDAGEYR + race + sex + INDFMPIR, dsn)
+summary(model_fg)
+```
+
+
+
+### We will explore one biomarker of exposure: serum Lead (LBXBPB). 
+
+16. Plot a histogram of serum lead (LBXBPB) and qualitatively describe the "shape" of the distribution - what does it look like? Is centered or skewed in a direction? (1)
+
+- The distribution of serum lead is right-skewed, with a majority of value below 10, and some as high as 50+.
+
+```{r Q16}
+hist(NHData.train$LBXBPB, main = "Serum Lead")
+```
+
+
+Investigators attempt to make this distribution more “normal” or symmetrically centered around a value by applying a "transformation" to make the linear associations easier to interpret. Since the lead levels seem to have an exponential-like decay a log-based transformation is used.  Lets take a look at the log base e of lead levels:
+
+```{r logged lead levels}
+NHData.train <- NHData.train %>% mutate(lead_logged = log(LBXBPB+ .001)) # add 0.001 for values that are 0
+p <- ggplot(NHData.train, aes(lead_logged))
+p <- p + geom_histogram()
+p
+```
+
+
+### Using a multivariate linear regression model, estimate the following:
+
+17.  Execute a multivariate linear regression model to associate log(blood lead levels [plus .001, a small constant]) with age, sex, race, and income-poverty ratio, again in the training cohort (NHData.train) (3)
+
+- your answer here
+```{r Q17}
+# log-transform lead
+NHData.train <- NHData.train %>% mutate(lead_logged = log(LBXBPB+ .001)) 
+# create a design object
+dsn <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.train)
+# run the regression model
+model_lead <-svyglm(lead_logged ~ RIDAGEYR + sex + race + INDFMPIR, dsn)
+summary(model_lead)
+```
+
+
+18. Could demographic variables be confounders in a test of association between Lead and BMI or glucose? Why or why not? (2)
+- Yes, they could. Demographic variables like age and race of Mexican vs White are both significantly associated with Lead and BMI or glucose, therefore, we cannot tell if BMI or glucose are affected by Lead directly or by their sharing demographic variables.
+
+
+## B. Executing environment-wide associations
+
+### Logging and scaling exposure variables
+
+#### Logging variables
+As above, to handle the right skew of exposure biomarkers, the measurements are log transformed.  We add a constant (0.001). If we have a model such as the following:
+
+```{r variable logging}
+mod <- svyglm(LBXGLU ~ log(LBXBPB + .001), dsn)
+summary(mod)
+```
+How would you interpret the coefficient? Answer: for a 1 unit change in the log10(exposure), you have a 10 unit increase (9.95) in fasting glucose mg/dL. 
+
+Another way to interpret this is in terms of (percentages)[https://stats.oarc.ucla.edu/sas/faq/how-can-i-interpret-log-transformed-variables-in-terms-of-percent-change-in-linear-regression/]:  a 1% change in the lead levels is associated with a 0.04 mg/dL (=4.32/100) higher serum glucose level. However this is association is not independent of potential confounding variables.
+
+#### Scaling variables
+Different variables have different units (e.g., mg/dL for lead levels). When we execute EWAS, we wish for every association to be comparable, or on the same units. Therefore, we need to "scale" the exposure variables to be on the same unit for each variable. One intuitive way to scale is to make all variables on the unit of standard deviation of that variable (e.g., sd(exposure)), dividing each measurement for each individual by the standard deviation of the population after subtracting the mean (centering the distribution at "0"). In code, to standardize or scale lead levels (after logging):
+
+```{r variable scaling}
+NHData.train <- NHData.train %>% mutate(lead_standardized = scale(log(LBXBPB+.001))) # Ways to standardize or "scale" LBXBPB
+
+NHData.train %>% summarize(m1= mean(lead_standardized, na.rm=T), m2 = mean(log(LBXBPB + .001), na.rm=T), s1 = sd(lead_standardized, na.rm = T), s2=sd(log(LBXBPB + .001), na.rm=T)) ## m1 should be 0, s1 should be equal to 1 
+
+```
+
+
+
+### Doing EWAS
+
+Now we will test each of the exposures in ExposureList  for linear association with a quantitative or continuous trait  in the training and testing datasets separately.  
+
+The script should input a the training or testing datasets and output a tibble that contains the exposure ID (e.g., LBXBPB),exposure name, phenotype name,estimate,standard error, pvalue, an false discovery rate (FDR). 
+
+	
+Your code should execute associations that associate between each exposure in ExposureList and the phenotype (e.g., BMI). The association should quantify how much the phenotype changes for a 1 standard deviation change in the logarithm base 10 of the exposure value (e.g., scale(log(exposure + 0.001))).
+
+Because some of the exposure variables contain 0 values we need to add a constant before doing a log transformation. Choosing a constant is a matter of hot debate. For the sake of the exercise, use a small constant equal to 0.001. The dependent variable is the phenotype, and the independent variable is an exposure. Include age, sex, race/ethnicity, and income/poverty ratio (INDFMPIR) as covariates.
+	
+Execute the following:
+
+1. EWAS on 1 standard deviation change of Body Mass Index (BMXBMI) in the training and testing datasets separately. Use 'svyglm' as the regression approach of choice (see function below).  (5) 
+
+```{r association function: one regression}
+# here is an (optional) function you can use to take in phenotype and exposure variables as "string" input to a linear regression:
+
+### function to do a pairwise association between a phenotype and exposure
+association <- function(phenotype="BMXBMI", exposure="LBXBCD", covariates=c("male", "RIDAGEYR"), dsn) {
+  # phenotype: a string that is a phenotype name (e.g., "BMXBMI")
+  # exposure: a string this is a exposure name (e.g., "LBXBCD")
+  # covariates: an array of covariate variables
+  # dsn: the survey design object
+  covariate_string <- paste(covariates, collapse="+")
+  mod_string <- sprintf('scale(%s) ~ scale(log(%s + .001)) + %s', phenotype, exposure, covariate_string)
+  # the above formats formula as a string 
+  mod <- svyglm(as.formula(mod_string), dsn)
+  return(mod)
+}
+
+# run an association between BMI and Blood cadmium, adjusting for male sex and age in years
+assoc_test_model <- association("BMXBMI", "LBXBCD", dsn=dsn)
+summary(assoc_test_model)
+```
+
+```{r B1 EWAS on BMI}
+# your code here:
+# run the association function for each exposure in ExposureList
+library(generics)
+ewas <- function(phenotype, ExposureList, design){
+  results <- tibble()
+  for (expo in ExposureList){
+    assoc <- tidy(association(phenotype=phenotype, exposure=expo, 
+                         covariates=c("RIDAGEYR","sex","race","INDFMPIR"), dsn = dsn))
+    assoc <- assoc %>% mutate(Exposure = expo,.before = term)
+    results <- rbind(results,assoc)
+  }
+  # add exposure ID and exposure name
+  expoID <- ExposureDescription %>% select(var,var_desc) %>% rename(Exposure = var, Exposure_descript = var_desc)
+  results <- left_join(expoID, results, by = "Exposure")
+  
+  # add phenotype name
+  results <- results %>% mutate(Phenotype = phenotype, .before = term)
+  return(results)
+}
+
+# since there is only 1 level in the 21st variable (URXUHG) in ExposureList, it kept giving errors, we have to drop it before run the regressions
+ExposureList_BMI <- ExposureList[-21]
+
+# run regression in training dataset
+
+dsn_train <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.train)
+BMI_train <- ewas("BMXBMI",ExposureList_BMI,dsn_train)
+
+# run regression in testing dataset
+dsn_test <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.test)
+BMI_test <- ewas("BMXBMI",ExposureList_BMI,dsn_test)
+```
+
+
+2. EWAS on 1 standard deviation of fasting blood glucose (LBXGLU) in the training and testing datasets separately. (1)
+
+```{r B2 EWAS on glucose}
+# run the association function for each exposure in ExposureList
+# run regression in training dataset
+dsn_train <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.train)
+glucose_train <- ewas("LBXGLU",ExposureList,dsn_train)
+
+# run regression in testing dataset
+dsn_test <- svydesign(ids=~SDMVPSU, strata=~SDMVSTRA, weights=~WTMEC2YR, nest=T, data=NHData.test)
+glucose_test <- ewas("LBXGLU",ExposureList,dsn_test)
+```
+
+3. Use the 'p.adjust' function in R to estimate the Benjamini-Hochberg False Discovery Rate (the method parameter should be "BH" or "FDR") for the exposure-phenotype associations in the training data cohort. Specifically, find or filter by all coefficients of the exposures (in ExposureList) and estimate the FDR for the pvalues that correspond to those coefficients. (1)
+
+```{r B3 FDR calculation, eval=FALSE}
+# hint: suppose we have an array of pvalues, one for each exposure:
+pvalue_sample <- runif(160) # toy data, an array of pvalues
+# we can estimate the FDR corrected pvalue for each pvalue by doing the following in base R:
+p.adjust(pvalue_sample)
+
+# your code here
+
+```
+
+
+
+## C. Analysis of EWAS results
+
+1. (a) What were the top 3 exposures associated with fasting glucose ranked by FDR (lowest to highest)? (b) How about for BMI? (c) How many were found in each phenotype in the training cohort with an FDR corrected pvalue of less than 0.05? (2)
+
+```{r C1}
+
+```
+
+2. Now interpret the coefficients of the top 3 most findings, ranked by low to high FDR in body mass index and fasting glucose. Specifically, how much does (a) fasting glucose and (b) body mass index change with respect to change in the exposure? Write down your answer in the units of estimate. (2)
+
+- a: your answer here
+- b: your answer here
+
+3. (a) Produce a "volcano plot" of the results for glucose and body mass index (two separate plots) by plotting the association size, or estimate on the x-axis and the -log10(FDR) on the yaxis for the training cohort data for the coefficient on the exposure (each point should denote the association size and FDR between an exposure and a phenotype). (b) Why is it useful to scale the dependent and independent variables before running the model? (2)
+
+- your answer here
+
+
+```{r C3}
+
+```
+
+
+4. Filter  “replicated” findings using the following heuristic: FDR significance of 0.05 in the training dataset, p-value < 0.05 in the testing dataset, and concordant directionality of associations (e.g., both associations are >0 OR both are <0). Provide your answer in the form of a table with the estimate of the "replicated" findings in the train, test, the FDR from the training data and pvalue from the test cohort data. (3)
+
+```{r C4 GLUCOSE}
+
+
+```
+
+```{r C4 BMI}
+
+
+```
+
+5. Environmental exposures are highly correlated with one another and they can change over time. Therefore, exposures could be subject to many biases. Describe a type of bias (e.g., selection, sampling, or other) that can influence your findings and give an example.(2)
+- your answer here
+
+
+
+6. BMI is a risk factor for diabetes: individuals with higher BMI are at risk for future type 2 diabetes. In this study, we found factors associated with both. For exposures that are found in both BMI and type 2 diabetes - do you think exposure is influencing both traits independently, or via BMI, or neither? Explain why. Optional: Write down a possible linear regression model to test your hypothesis and interpret the finding. (3)
+
+- your answer here
+
